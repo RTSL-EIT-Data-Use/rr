@@ -1,0 +1,342 @@
+# polio data Analysis
+# Load packages
+pacman::p_load(
+  rio,
+  here,
+  janitor,
+  tidyverse,
+  lubridate,
+  apyramid,
+  gtsummary,
+  skimr,
+  epikit,
+  gt,
+  lubridate,
+  flextable,
+  sf,
+  tmap
+)
+# Import Data
+afar<- "data/Afar Region _ nOPV2 and bOPV2  SIA campaign daily Admin report_ Round 3_September 2025.xlsx"
+amhara <-"data/Amhara  Region _ nOPV2 and bOPV2 SIA Campaign Daily Admin Report_ Round 3_September 2025.xlsx"
+diredawa <- "data/Dire Dawa _ nOPV2 and bOPV2  SIA campaign daily Admin report_ Round 3_September 2025.xlsx"
+harari <- "data/Harari _ nOPV2 and bOPV2  SIA campaign daily Admin report_ Round 3_September 2025.xlsx"
+oromia <- "data/Oromia Region _ nOPV2 and bOPV2 SIA Campaign Daily Admin Report_ Round 3_September 2025.xlsx"
+somali <-"data/Somali  Region _ nOPV2 and bOPV2 SIA Campaign Daily Admin Report_ Round 3_September 2025.xlsx"
+southethiopia <- "data/South Ethiopia Region _ nOPV2 and bOPV2 SIA Campaign Daily Admin Report_ Round 3_September 2025.xlsx"
+
+ethiopia <- read_sf(here("data","ETH shape file_2024", "eth_admbnda_adm1_csa_bofedb_2021.shp")) %>% 
+  rename(regions =ADM1_EN )
+
+# Load 7 region data
+  dat_amhara <- import(amhara, which = "Summary", skip = 3)
+  dat_amhara <- dat_amhara %>% select(1:11, 14:43)
+  dat_afar <- import(afar, which = "Summary", skip = 3)
+  dat_afar <- dat_afar %>% select(1:11, 14:43)
+  dat_diredawa <- import(diredawa, which = "Summary", skip = 3)
+  dat_diredawa <- dat_diredawa %>% select(1:11, 14:43)
+  dat_harari <- import(harari, which = "Summary", skip = 3)
+  dat_harari <- dat_harari %>% select(1:11, 14:43)
+  dat_oromia <- import(oromia, which = "Summary", skip = 3)
+  dat_oromia <- dat_oromia %>% select(1:11, 14:43)
+  dat_somali <- import(somali, which = "Summary", skip = 3)
+  dat_somali <- dat_somali %>% select(1:11, 14:43)
+  dat_south <- import(southethiopia, which = "Summary", skip = 3)
+  dat_south <- dat_south %>% select(1:11, 14:43)
+
+  # clean column names
+  clean_colnames <- c("n", "regions", "zone", "woreda","camp_date", "target","daily_target",
+                        "0-11 vacbef",
+                        "0-11 notvacbef","12-59vacbef","12-59_notvacbef","totvac","coverage",
+                        "nOPV2vrec","nOPV2vuse","nOPV2paruse","nOPV2retur","nOPV2brok",
+                        "nOPV2vbad","nOPV2vlost","nOPVvwr","bOPVrec","bOPVuse","bOPVparuse",
+                        "bOPVretur","bOPVbrok","bOPVbad","bOPVlost","bOPVvwr","afp_alert","aefi",
+                        "hhvisit","partpartic","partreac","zerodoside","zero_vacina","undervacciniden",
+                        "undervaccilink","num_team","num_vacciteamrep","any")
+ # clean names 
+      colnames(dat_amhara) <- clean_colnames
+      colnames(dat_afar) <- clean_colnames
+      colnames(dat_diredawa) <- clean_colnames
+      colnames(dat_harari) <- clean_colnames
+      colnames(dat_oromia) <- clean_colnames
+      colnames(dat_somali) <- clean_colnames
+      colnames(dat_south) <- clean_colnames
+dat_national <- bind_rows(
+        dat_amhara, 
+        dat_afar, 
+        dat_diredawa, 
+        dat_harari, 
+        dat_oromia, 
+        dat_somali, 
+        dat_south
+      )
+      
+  # The campaign covered only 7 region out of the 14 regional state
+      
+ # Merge all 7 regional data into one master file
+        
+ dat_national <- rbind(dat_afar,dat_amhara,dat_diredawa,dat_harari,dat_oromia,dat_somali,dat_south)
+ # data cleaning,
+ # step 1. remove the total rows (empty "n" column)
+          dat_national <- dat_national %>% filter(!is.na(n))  # remove the bottom summary
+          dat_national <- dat_national %>%
+            distinct()  # remove duplicates
+# Geographic vaccination coverage
+    dat_map <- dat_national %>%
+    select(regions) %>%
+    group_by(regions) %>%
+    summarise(program = n()) %>%
+    mutate(status = case_when(
+    program >= 1 ~ "Campaign conducted",
+              TRUE ~ "Campaign not conducted"
+            ))
+          
+    map_sf <- left_join(ethiopia, dat_map, by = "regions")
+          
+    map_sf <- map_sf %>%
+    mutate(status = replace_na(status, "Campaign not conducted"))
+          
+    ggplot(map_sf, aes(fill = status)) +
+    geom_sf(color = "white", linewidth = 0.3) +
+    geom_sf_text(aes(label = regions), size = 2.8, color = "black", 
+                         fontface = "bold", check_overlap = TRUE) +
+    scale_fill_manual(
+              values = c(
+                "Campaign conducted" = "#2c7fb8",
+                "Campaign not conducted" = "grey85"
+              )
+            ) +
+            labs(
+              title = "Campaign Status by Region",
+              subtitle = "Ethiopia",
+              fill = "Campaign status",
+              caption = "Source: Ethiopian Public Health Institute, PHEM"
+            ) +
+            theme_void(base_size = 12) +
+            theme(
+              plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+              plot.subtitle = element_text(size = 11, hjust = 0.5, color = "grey40"),
+              plot.caption = element_text(size = 8, color = "grey50", hjust = 11),
+              legend.position = "right",
+              legend.title = element_text(face = "bold", size = 4),
+              legend.text = element_text(size = 10),
+              plot.margin = margin(10, 10, 10, 10)
+            )
+   # Region summary
+            region_summary <- dat_national %>%
+              group_by(regions) %>%
+              summarise(num_zone = n_distinct(zone,na.rm = TRUE),
+                        num_woreda = n_distinct(woreda,na.rm = TRUE),
+                        target = sum(target,na.rm = TRUE),
+                        daily_perfor =sum(totvac,na.rm = TRUE),
+                        coverage_pct = (daily_perfor/target) *100)
+            
+# Integrated nOPV2 Campaign Administrative performance by region
+            
+# The overall regional performance exceeded targets across all areas, successfully fulfilling the minimum national target of 95% campaign success.
+# Table 1 regional performance
+# Create the attractive table view
+   table_data <- region_summary %>%
+   bind_rows(
+   summarise(regions = "Total",
+        num_zone = sum(num_zone, na.rm = TRUE),
+        num_woreda = sum(num_woreda, na.rm = TRUE),
+        target = sum(target, na.rm = TRUE),
+        daily_perfor = sum(daily_perfor, na.rm = TRUE))
+                ) %>%
+         mutate(coverage_pct = ifelse(regions == "Total", (daily_perfor / target) * 100, coverage_pct))
+              
+# Build the attractive flextable
+  table_data %>%
+  flextable() %>% 
+# Custom Column Labels
+  set_header_labels(
+    regions = "Region",
+    num_zone = "Num of Zones",
+    num_woreda = "Num of Woredas",
+    target = "Target",
+    daily_perfor = "Performance",
+    coverage_pct = "Coverage Proportion"
+                ) %>% 
+# Number Formatting (with commas for thousands)
+    colformat_num(j = c("num_zone", "num_woreda", "target", "daily_perfor"), big.mark = ",", digits = 0) %>%
+# Percentage Formatting (appends % sign)
+    colformat_num(j = "coverage_pct", suffix = "%", digits = 0) %>%
+# Apply professional styling and blue coloring accents
+    theme_vanilla() %>%
+    color(color = "#FFFFFF", part = "header") %>% # Fixed syntax here
+    bg(bg = "#0055A5", part = "header") %>%       # Fixed syntax here
+    bold(part = "header") %>%
+    align(align = "center", part = "header") %>%
+    align(j = 2:6, align = "right", part = "body") %>%
+# Styling for the Total summary row at the bottom
+    bold(i = ~ regions == "Total") %>%
+    bg(i = ~ regions == "Total", bg = "#EAF2F8") %>% 
+    hline(i = ~ regions == "Total", border = fp_border_default(color = "#0055A5", width = 1.5)) %>%
+    set_table_properties(width = 1, layout = "autofit")
+  # nOPV2 Vaccination status by age group 
+  # Majority of children had received at least one dose of polio vaccine before the campaign.
+  # Children identified had not been reached through routine immunization 
+  # Potential immunity gap: These children may have limited or no prior immunity against polio virus.
+  # The campaign can identify and vaccinate children who are missed by routine immunization.
+  # Link children identified as missed by routine immunization to routine vaccination services.
+  # The focus should not only be on the number vaccinated, but also on identifying and closing immunity gaps among previously un reached children.
+  Age_vaccination <- dat_national %>%
+  summarise(across(.cols = matches("0-11.*vac|12-59.*vac|0-11vac|12-59vac"), 
+                  .fns = ~sum(., na.rm = TRUE))) %>% 
+  pivot_longer(everything(), names_to = "Category", values_to = "Count") %>% 
+  mutate(Full_Category = case_when(
+  str_detect(Category, "0.*11") & str_detect(Category, "not|un") ~ "0-11 Months\nNot Vaccinated Before",
+  str_detect(Category, "0.*11") ~ "0-11 Months\nVaccinated Before",
+  str_detect(Category, "12.*59") & str_detect(Category, "not|un") ~ "12-59 Months\nNot Vaccinated Before",
+  TRUE ~ "12-59 Months\nVaccinated Before"))
+  # 2. Plot all 4 categories separately on the X-axis
+              ggplot(Age_vaccination, aes(x = Full_Category, y = Count, fill = Full_Category)) +
+                geom_col(width = 0.6) +
+                # Custom colors for each individual category bar
+                scale_fill_manual(values = c(
+                  "0-11 Months\nVaccinated Before"     = "#0055A5", 
+                  "0-11 Months\nNot Vaccinated Before" = "#3498DB",
+                  "12-59 Months\nVaccinated Before"    = "#E74C3C", 
+                  "12-59 Months\nNot Vaccinated Before"= "#F1C40F"
+                )) +
+                scale_y_continuous(labels = scales::comma) +
+                theme_minimal() +
+                labs(
+                  title = "nOPV2 vacciantion based on the previous vaccination status", 
+                  y = "Children Reached", 
+                  x = ""
+                ) +
+                theme(
+                  plot.title = element_text(face = "bold", size = 12),
+                  legend.position = "none", 
+                  axis.text.x = element_text(face = "bold", size = 10))
+ # Vaccine utilization
+ # Oromia and Amhara region handled the highest volumes of nOPV2 vaccines, dominating "Received," "Used," and "Partially Used" counts.
+ # Regions such as Harari, Dire Dawa, and South Ethiopia maintain very low counts across all seven metrics. This indicates limited campaign scale in these specific areas.
+ # Number of children vaccinated by age 
+    dat_vaccine <- dat_national %>%
+    select(regions, nOPV2vrec, nOPV2vuse, nOPV2retur, nOPV2vbad, nOPV2vlost, nOPV2paruse, nOPV2brok) %>%
+    group_by(regions) %>%
+    summarise( across(starts_with("nOPV2"), ~ sum(.x, na.rm = TRUE)),
+                  .groups = "drop")
+    dat_vaccinate2 <- dat_vaccine %>%
+               pivot_longer(
+                  cols = starts_with("nOPV2"),     
+                  names_to = "vaccine_status",     
+                  values_to = "count") %>%                  
+# <-- The pipe must sit exactly here at the line break!
+                mutate(
+                  vaccine_status = case_when(
+                    vaccine_status == "nOPV2vrec"   ~ "1. Received Doses",
+                    vaccine_status == "nOPV2vuse"   ~ "2. Used Doses",
+                    vaccine_status == "nOPV2retur"  ~ "3. Returned Doses",
+                    vaccine_status == "nOPV2vbad"   ~ "4. Bad Condition",
+                    vaccine_status == "nOPV2vlost"  ~ "5. Lost Doses",
+                    vaccine_status == "nOPV2paruse" ~ "6. Partially Used",
+                    vaccine_status == "nOPV2brok"   ~ "7. Broken Doses",
+                    TRUE ~ vaccine_status 
+                  )
+                )
+              
+   #  Generate the chart
+              ggplot(data = dat_vaccinate2, mapping = aes(x = count, y = regions, fill = regions)) +
+                geom_col(show.legend = FALSE) +
+                facet_wrap(~vaccine_status, scales = "free_x") + 
+                scale_x_continuous(labels = scales::label_comma()) +
+                theme_minimal()
+# Sketch the map
+# Zero Dose and Under vaccinated children
+ # Zero dose vaccinated}
+  Zero_dose <- dat_national %>%
+  group_by(regions) %>%
+  summarise(
+  zerodoside = suppressWarnings(sum(as.numeric(zerodoside), na.rm = TRUE)),
+  zero_vacina = suppressWarnings(sum(as.numeric(zero_vacina), na.rm = TRUE)),
+  undervacciniden = suppressWarnings(sum(as.numeric(undervacciniden), na.rm = TRUE)),
+  undervaccilin = suppressWarnings(sum(as.numeric(undervaccilink), na.rm = TRUE))
+                )
+  combined_long <- Zero_dose %>%
+  pivot_longer(
+  cols = c(zerodoside, zero_vacina, undervacciniden, undervaccilin),
+  names_to = "measure", values_to = "count"
+   ) %>%
+  mutate(measure = recode(measure,
+        zerodoside = "Zero-dose Identified",
+        zero_vacina = "Zero-dose Vaccinated",
+        undervacciniden = "Under-vacc Identified",
+        undervaccilin = "Under-vacc Vaccinated"
+                ))
+              
+        ggplot(combined_long, aes(x = reorder(regions, -count), y = count, fill = measure)) +
+        geom_col(position = "stack", width = 0.7, color = "white", linewidth = 0.2) +
+        scale_fill_manual(values = c(
+       "Zero-dose Identified" = "#e34a33",
+        "Zero-dose Vaccinated" = "#2c7fb8",
+        "Under-vacc Identified" = "#fdae61",
+        "Under-vacc Vaccinated" = "#31a354"
+                )) +
+        labs(
+          title = "Zero-Dose and Under-Vaccinated Children by Region",
+           subtitle = "Identified vs. Vaccinated, by region",
+           x = "Region", y = "Number of children", fill = "Measure",
+          caption = "Source: Ethiopian Public Health Institute, PHEM"
+                ) +
+          theme_minimal(base_size = 12) +
+                theme(
+           plot.title = element_text(face = "bold", size = 15),
+           plot.subtitle = element_text(size = 10, color = "grey40"),
+                  plot.caption = element_text(size = 8, color = "grey50"),
+                  axis.text.x = element_text(angle = 45, hjust = 1),
+                  legend.position = "right",
+                  legend.title = element_text(face = "bold"),
+                  panel.grid.minor = element_blank()
+                )
+              
+
+              # Number of reported District per Region
+              
+              ```{r}
+              reported_Diatrict <- dat_national %>%
+                group_by(regions) %>%
+                summarise(
+                  num_team = suppressWarnings(sum(as.numeric(num_team), na.rm = TRUE)),
+                  num_vacciteamrep = suppressWarnings(sum(as.numeric(num_vacciteamrep), na.rm = TRUE))
+                )
+              reported_long <- reported_Diatrict %>%
+                pivot_longer(
+                  cols = c(num_team, num_vacciteamrep),
+                  names_to = "measure", values_to = "count"
+                ) %>%
+                mutate(measure = recode(measure,
+                                        num_team = "Number of Teams",
+                                        num_vacciteamrep = "Teams Reporting"
+                ))
+              
+              ggplot(reported_long, aes(x = reorder(regions, -count), y = count, fill = measure)) +
+                geom_col(position = "dodge", width = 0.7, color = "white", linewidth = 0.2) +
+                scale_fill_manual(values = c(
+                  "Number of Teams" = "#2c7fb8",
+                  "Teams Reporting" = "#e34a33"
+                )) +
+                labs(
+                  title = "Reporting team by region",
+                  x = "Region", y = "Number of teams", fill = "Measure",
+                  caption = "Source: Ethiopian Public Health Institute, PHEM"
+                ) +
+                theme_minimal(base_size = 12) +
+                theme(
+                  plot.title = element_text(face = "bold", size = 14),
+                  plot.caption = element_text(size = 8, color = "grey50"),
+                  axis.text.x = element_text(angle = 45, hjust = 1),
+                  legend.position = "right",
+                  legend.title = element_text(face = "bold")
+                )
+              
+            
+              
+
+
+
+
+
